@@ -1,13 +1,64 @@
 [
   {
-    "name": "week",
-    "title": "This week",
-    "subtitle": "Freight Ops for Claude Code: what needs attention, rendered by npm run view",
+    "name": "ops",
+    "title": "The freight",
+    "subtitle": "Freight Ops for Claude Code: what needs a decision, the board, the runs, the POD gaps and the fleet clocks. Rendered by npm run view.",
     "sections": [
       {
-        "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "title": "Needs a decision",
+        "note": "Dangerous goods with the wrong driver, overloaded runs, work time breaches, expiring certificates, freight going nowhere, money asleep. Worst first.",
+        "sql": "select case reason when 'dg_unendorsed' then 'DANGEROUS GOODS, UNENDORSED DRIVER' when 'overloaded_run' then 'Run over the rated payload' when 'worktime_breach' then 'Work time breach' when 'fleet_cert_due' then 'COF or rego due' when 'ruc_low' then 'RUC licence nearly out' when 'late_delivery' then 'Past the required date' when 'consignment_stuck' then 'Booked, on no run' when 'pod_missing' then 'Delivered, no signed POD' when 'exception_no_claim' then 'Exception at the door, no claim' when 'unbilled_delivered' then 'POD in hand, not billed' when 'rate_missing' then 'No rate: moving for $0' when 'claim_open' then 'Cargo claim undecided' when 'invoice_overdue' then 'Invoice overdue' when 'invoice_draft' then 'Draft never sent' when 'over_credit_limit' then 'Over the credit limit' when 'task_overdue' then 'Task overdue' else reason end as what, label as record, customer, who, days, case when amount_cents > 0 then to_char(amount_cents / 100.0, 'FM$999,999,990') else '' end as value, detail from v_attention order by case reason when 'dg_unendorsed' then 1 when 'overloaded_run' then 2 when 'worktime_breach' then 3 when 'fleet_cert_due' then 4 when 'ruc_low' then 5 when 'late_delivery' then 6 when 'consignment_stuck' then 7 when 'pod_missing' then 8 when 'exception_no_claim' then 9 when 'unbilled_delivered' then 10 when 'rate_missing' then 11 when 'claim_open' then 12 when 'invoice_overdue' then 13 when 'invoice_draft' then 14 when 'over_credit_limit' then 15 else 16 end, days desc nulls last"
+      },
+      {
+        "title": "The board",
+        "note": "Every consignment not yet finished with, in working order.",
+        "sql": "select con_no, customer || case when on_stop then ' [STOP]' else '' end as customer, origin_zone as from_, dest_zone as to_, service, weight_kg, case when dangerous_goods then 'DG' else '' end as dg, status, case when required_by is null then '' else to_char(required_by, 'YYYY-MM-DD') || case when days_late > 0 then ' (' || days_late || 'd LATE)' else '' end end as required, coalesce(run_no, '') as run, case when rate_desc is null then 'NO RATE' else to_char(charge_cents / 100.0, 'FM$999,999,990') end as charge from v_board where status not in ('delivered', 'cancelled') order by case status when 'picked-up' then 0 when 'assigned' then 1 when 'booked' then 2 else 3 end, required_by nulls last"
+      },
+      {
+        "title": "The runs",
+        "note": "Load against the truck's rated payload. Over 100% is an offence, not a preference.",
+        "sql": "select run_no, to_char(run_date, 'YYYY-MM-DD') as date, coalesce(name, '') as run, coalesce(driver, 'NO DRIVER') as driver, coalesce(fleet_no, '') as truck, status, stops, load_kg, case when load_pct is null then '' else load_pct || '%' || case when load_pct > 100 then ' OVER' else '' end end as of_payload, case when has_dg then 'DG' else '' end as dg from v_run_board where run_date >= now()::date - 7 order by run_date, run_no"
+      },
+      {
+        "title": "Delivered, no signed POD",
+        "note": "Billing is blocked on every row here. The chase list, oldest first.",
+        "sql": "select con_no, customer, receiver_name as delivered_to, to_char(delivered_at, 'YYYY-MM-DD') as delivered, days_waiting, coalesce(run_no, '') as run, coalesce(driver, '') as driver, to_char(charge_cents / 100.0, 'FM$999,999,990') as blocked from v_pod_gap order by days_waiting desc"
+      },
+      {
+        "title": "The fleet and its clocks",
+        "note": "COF, rego and the RUC licence distance against the hubodometer.",
+        "sql": "select fleet_no, rego, description as vehicle, max_payload_kg || ' kg' as payload, to_char(cof_due_on, 'YYYY-MM-DD') || case when cof_days < 0 then ' OVERDUE' when cof_days <= 14 then ' (' || cof_days || 'd)' else '' end as cof_due, to_char(rego_due_on, 'YYYY-MM-DD') || case when rego_days < 0 then ' OVERDUE' when rego_days <= 14 then ' (' || rego_days || 'd)' else '' end as rego_due, coalesce(hubodometer_km::text, '') as hubo_km, case when ruc_paid_to_km is null then 'no RUC' else ruc_remaining_km || ' km' || case when ruc_remaining_km < 1000 then ' LOW' else '' end end as ruc_left from v_fleet where active order by fleet_no"
+      }
+    ]
+  },
+  {
+    "name": "money",
+    "title": "The money",
+    "subtitle": "What is ready to bill, the debtors, customer exposure, DIFOT and the claims. Rendered by npm run view.",
+    "sections": [
+      {
+        "title": "Ready to bill",
+        "note": "Delivered, POD in hand, on no invoice. One command drafts it all: bill.",
+        "sql": "select con_no, customer, dest_zone as to_, to_char(delivered_at, 'YYYY-MM-DD') as delivered, days_unbilled, to_char(charge_cents / 100.0, 'FM$999,999,990') as charge from v_unbilled order by days_unbilled desc"
+      },
+      {
+        "title": "Debtors",
+        "sql": "select number, customer, to_char(total_cents / 100.0, 'FM$999,999,990') as total, status, to_char(due_on, 'YYYY-MM-DD') as due, case when status = 'draft' then 'NOT SENT' else coalesce(bucket, '') end as aged, coalesce(days_overdue || 'd', '') as overdue from v_debtors order by days_overdue desc nulls last"
+      },
+      {
+        "title": "Customer exposure",
+        "note": "Owing plus delivered-unbilled freight, against the credit limit.",
+        "sql": "select customer || case when on_stop then ' [STOP]' else '' end as customer, open_cons as open, case when owing_cents > 0 then to_char(owing_cents / 100.0, 'FM$999,999,990') else '' end as owing, case when unbilled_cents > 0 then to_char(unbilled_cents / 100.0, 'FM$999,999,990') else '' end as unbilled, case when exposure_cents > 0 then to_char(exposure_cents / 100.0, 'FM$999,999,990') else '' end as exposure, case when credit_limit_cents is null then '' else to_char(credit_limit_cents / 100.0, 'FM$999,999,990') || case when exposure_cents > credit_limit_cents then ' OVER' else '' end end as limit_ from v_customer_position where status = 'active' and (exposure_cents > 0 or open_cons > 0) order by exposure_cents desc"
+      },
+      {
+        "title": "DIFOT, last 28 days",
+        "note": "Delivered in full (no exception at the door) and on time (against required-by).",
+        "sql": "select customer, delivered, on_time, in_full, difot_pct || '%' as difot from v_difot order by difot_pct, customer"
+      },
+      {
+        "title": "Cargo claims",
+        "note": "Limited carrier's risk caps liability at $2,000 per unit (CCLA 2017 Part 5). Open claims age against the Act's windows.",
+        "sql": "select cl.claim_no, c.con_no, cu.name as customer, cl.kind, to_char(cl.claimed_cents / 100.0, 'FM$999,999,990') as claimed, cl.status, to_char(cl.opened_on, 'YYYY-MM-DD') as opened, case when cl.status = 'open' then (now()::date - cl.opened_on) || 'd' else '' end as open_for from claims cl join consignments c on c.id = cl.consignment_id join customers cu on cu.id = c.customer_id order by cl.opened_on desc"
       }
     ]
   }

@@ -1,11 +1,74 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "invoice",
+    "title": "Tax invoice",
+    "for_each": "select i.id, (i.number || ' ' || c.name) as name from invoices i join customers c on c.id = i.customer_id where i.status <> 'paid' order by i.issued_on desc",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Invoice",
+        "note": "Drafted from the delivery record. Check it, then send it yourself: this system never sends anything.",
+        "sql": "select i.number, c.name as billed_to, coalesce(c.contact_name, '') as attention, to_char(i.issued_on, 'DD Month YYYY') as issued, to_char(i.due_on, 'DD Month YYYY') as due, to_char(i.total_cents / 100.0, 'FM$999,999,990.00') as total from invoices i join customers c on c.id = i.customer_id where i.id = $1"
+      },
+      {
+        "title": "Lines",
+        "sql": "select coalesce(cn.con_no, '') as con, il.description, to_char(il.amount_cents / 100.0, 'FM$999,999,990.00') as amount from invoice_lines il left join consignments cn on cn.id = il.consignment_id where il.invoice_id = $1 order by il.created_at"
+      },
+      {
+        "title": "Proof of delivery behind this invoice",
+        "sql": "select cn.con_no, cn.receiver_name as delivered_to, to_char(cn.delivered_at, 'DD Mon YYYY') as delivered, coalesce(cn.pod_name, '') as signed_by from invoice_lines il join consignments cn on cn.id = il.consignment_id where il.invoice_id = $1 order by cn.delivered_at"
+      }
+    ]
+  },
+  {
+    "name": "run-sheet",
+    "title": "Run sheet",
+    "for_each": "select r.id, (r.run_no || ' ' || to_char(r.run_date, 'YYYY-MM-DD')) as name from runs r where r.status in ('planned', 'out') order by r.run_date",
+    "file": "name",
+    "sections": [
+      {
+        "title": "The run",
+        "note": "One sheet per open run: the driver's day. Dangerous goods are flagged per drop; the docs ride with the goods.",
+        "sql": "select r.run_no, coalesce(r.name, '') as run, to_char(r.run_date, 'Day DD Month YYYY') as date, coalesce(d.full_name, 'NO DRIVER') as driver, coalesce(v.fleet_no || ' ' || coalesce(v.rego, ''), 'NO VEHICLE') as vehicle, (select coalesce(sum(c.weight_kg), 0) from consignments c where c.run_id = r.id and c.status <> 'cancelled') || ' kg of ' || coalesce(v.max_payload_kg::text, '?') || ' kg' as load from runs r left join drivers d on d.id = r.driver_id left join vehicles v on v.id = r.vehicle_id where r.id = $1"
+      },
+      {
+        "title": "Drops, in order",
+        "sql": "select c.drop_order as drop_, c.con_no, cu.name as customer, coalesce(c.receiver_name, '') as deliver_to, coalesce(c.dest_address, '') as address, c.items, c.weight_kg, case when c.dangerous_goods then 'DG class ' || coalesce(c.dg_class, '?') else '' end as dg, coalesce(c.instructions, '') as instructions from consignments c join customers cu on cu.id = c.customer_id where c.run_id = $1 and c.status <> 'cancelled' order by c.drop_order nulls last"
+      }
+    ]
+  },
+  {
+    "name": "con-note",
+    "title": "Consignment note",
+    "for_each": "select c.id, (c.con_no || ' ' || cu.name) as name from consignments c join customers cu on cu.id = c.customer_id where c.status in ('booked', 'assigned', 'picked-up') order by c.con_no",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Consignment",
+        "note": "Carried at limited carrier's risk under the Contract and Commercial Law Act 2017 Part 5 unless agreed otherwise in writing: liability is limited to $2,000 per unit of goods.",
+        "sql": "select c.con_no, cu.name as customer, coalesce(c.customer_ref, '') as their_ref, coalesce(c.sender_name, '') as sender, coalesce(c.origin_address, '') as pickup, coalesce(c.receiver_name, '') as receiver, coalesce(c.dest_address, '') as delivery, c.origin_zone || ' to ' || c.dest_zone as lane, c.service, c.items, c.pallets, c.weight_kg || ' kg' as weight, case when c.dangerous_goods then 'YES: class ' || coalesce(c.dg_class, '?') || '. Declaration and segregation required.' else 'no' end as dangerous_goods, coalesce(to_char(c.required_by, 'DD Month YYYY'), 'not fixed') as required_by, coalesce(c.instructions, '') as instructions from consignments c join customers cu on cu.id = c.customer_id where c.id = $1"
+      }
+    ]
+  },
+  {
+    "name": "service-report",
+    "title": "Customer service report",
+    "for_each": "select d.customer_id as id, d.customer as name from v_difot d order by d.customer",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Service, last 28 days",
+        "note": "Delivered in full and on time, from the delivery record, not from memory.",
+        "sql": "select d.delivered, d.on_time, d.in_full, d.difot_pct || '%' as difot from v_difot d where d.customer_id = $1"
+      },
+      {
+        "title": "Deliveries",
+        "sql": "select c.con_no, coalesce(c.receiver_name, '') as delivered_to, c.dest_zone as to_, to_char(c.delivered_at, 'DD Mon YYYY') as delivered, coalesce(to_char(c.required_by, 'DD Mon YYYY'), '') as required, case when c.required_by is not null and c.delivered_at::date > c.required_by then 'LATE' else 'on time' end as timing, coalesce(c.exception, '') as exception, coalesce(c.pod_name, 'NO POD') as signed_by from consignments c where c.customer_id = $1 and c.status = 'delivered' and c.delivered_at >= now() - interval '28 days' order by c.delivered_at"
+      },
+      {
+        "title": "Exceptions and claims",
+        "sql": "select cl.claim_no, c.con_no, cl.kind, to_char(cl.claimed_cents / 100.0, 'FM$999,999,990.00') as claimed, cl.status, coalesce(cl.outcome, '') as outcome from claims cl join consignments c on c.id = cl.consignment_id where c.customer_id = $1 order by cl.opened_on desc"
+      }
     ]
   }
 ]

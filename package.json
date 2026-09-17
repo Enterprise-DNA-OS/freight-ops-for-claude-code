@@ -8,6 +8,7 @@
   "repository": "github:Enterprise-DNA-OS/freight-ops-for-claude-code",
   "engines": { "node": ">=20" },
   "scripts": {
+    "freight": "node scripts/freight.mjs",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
     "demo": "node scripts/migrate.mjs && node scripts/seed.mjs",
