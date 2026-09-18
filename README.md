@@ -29,6 +29,17 @@
 
 ---
 
+<!-- three-doors -->
+<table align="center">
+  <tr>
+    <td align="center"><strong>Do it yourself</strong><br/>Clone it, run it, own it. Free, MIT.<br/><a href="#quick-start">Quick start</a></td>
+    <td align="center"><strong>We customise it</strong><br/>Your fields, your rules, a web front end if you want one, your TransVirtual data brought across.<br/><a href="https://calendly.com/sam-mckay/discovery-call">Book a call</a></td>
+    <td align="center"><strong>We run it for you</strong><br/>Installed, connected and operated inside Omni. Setup fee, then a retainer.<br/><a href="https://enterprisedna.co/omni/instead-of/transvirtual">How it works</a></td>
+  </tr>
+</table>
+
+<p align="center">Works with Claude Code, Codex, OpenCode or Cursor (see <a href="AGENTS.md">AGENTS.md</a>).</p>
+
 ## What is this
 
 Freight Ops for Claude Code does the job you pay TransVirtual for, as a Postgres database and a set of Claude Code commands. There is no web front end. You open the folder in [Claude Code](https://claude.com/claude-code) and ask for what you want in plain language. It runs the right query, and it can answer questions the vendor's report menu cannot.
@@ -189,6 +200,7 @@ Runs, work time records and claims deliberately do not import: the old system's 
 ```
 freight-ops-for-claude-code/
   CLAUDE.md                              how the company wants this run (routing table + house rules)
+  AGENTS.md                 the same, for Codex / OpenCode / Cursor / Gemini CLI
   brand.json                             your name, logo and colours on every document and view
   views.json                             the HTML dashboards npm run view renders
   documents.json                         the paperwork npm run docs renders
